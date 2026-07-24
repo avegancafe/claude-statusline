@@ -172,11 +172,60 @@ priority = 7
 	assert.True(t, ranked)
 	assert.Equal(t, 7, priority)
 
-	// The preset itself ships zero priorities (D6): every other module
-	// stays unranked even though its [table] exists implicitly.
-	directoryPriority, directoryRanked := cfg.Priority("directory")
-	assert.False(t, directoryRanked)
-	assert.Equal(t, 0, directoryPriority)
+	// The preset itself ships zero priorities (D6): every OTHER module
+	// stays unranked, even though the preset base sets other fields on them.
+	otherModules := []string{
+		"directory", "cost", "context", "git_branch", "session_timer",
+		"lines_changed", "usage", "version", "vim_mode", "agent_name",
+	}
+	for _, name := range otherModules {
+		otherPriority, otherRanked := cfg.Priority(name)
+		assert.False(t, otherRanked, "module %s should be unranked", name)
+		assert.Equal(t, 0, otherPriority, "module %s priority", name)
+	}
+}
+
+// TestLoadPartialModuleTableLeavesPriorityUnranked exercises the real
+// two-pass config.Load() path (preset header -> ApplyPreset -> user TOML
+// decoded on top), not a raw toml.Decode against a synthetic Config. T4
+// depends on Load(), so a [model] table that sets only style (no priority)
+// must leave Priority unranked while still applying the style override.
+func TestLoadPartialModuleTableLeavesPriorityUnranked(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+preset = "tokyo-night"
+
+[model]
+style = "italic"
+`), 0o644))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+
+	assert.Nil(t, cfg.Model.Priority)
+
+	priority, ranked := cfg.Priority("model")
+	assert.False(t, ranked)
+	assert.Equal(t, 0, priority)
+	assert.Equal(t, "italic", cfg.Model.Style)
+}
+
+// TestLoadFitMarginRoundTripsAndClamps confirms [fit] margin survives the
+// real config.Load() path (not just direct struct mutation) and that a
+// negative margin loaded from disk still clamps to 0 via Margin() (D8).
+func TestLoadFitMarginRoundTripsAndClamps(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+[fit]
+margin = -1
+`), 0o644))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, -1, cfg.Fit.Margin)
+	assert.Equal(t, 0, cfg.Margin())
 }
 
 func TestPriorityDecodesForEveryModule(t *testing.T) {

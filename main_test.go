@@ -45,6 +45,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestEndToEnd(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	cmd := exec.CommandContext(context.Background(), testBinary)
 	cmd.Stdin = strings.NewReader(mockJSON)
 	out, err := cmd.Output()
@@ -58,6 +60,8 @@ func TestEndToEnd(t *testing.T) {
 }
 
 func TestEndToEndPromptSubcommand(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	cmd := exec.CommandContext(context.Background(), testBinary, "prompt")
 	cmd.Stdin = strings.NewReader(mockJSON)
 	out, err := cmd.Output()
@@ -69,6 +73,8 @@ func TestEndToEndPromptSubcommand(t *testing.T) {
 }
 
 func TestEndToEndEmptyJSON(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	cmd := exec.CommandContext(context.Background(), testBinary)
 	cmd.Stdin = strings.NewReader("{}")
 	out, err := cmd.Output()
@@ -94,6 +100,8 @@ func TestEndToEndInitCommand(t *testing.T) {
 }
 
 func TestEndToEndTestCommand(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	cmd := exec.CommandContext(context.Background(), testBinary, "test")
 	out, err := cmd.Output()
 	require.NoError(t, err)
@@ -105,6 +113,8 @@ func TestEndToEndTestCommand(t *testing.T) {
 }
 
 func TestEndToEndThemesCommand(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	cmd := exec.CommandContext(context.Background(), testBinary, "themes")
 	out, err := cmd.Output()
 	require.NoError(t, err)
@@ -138,6 +148,8 @@ preset = "catppuccin"
 }
 
 func TestEndToEndVersion(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	cmd := exec.CommandContext(context.Background(), testBinary, "--version")
 	out, err := cmd.Output()
 	require.NoError(t, err)

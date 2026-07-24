@@ -23,6 +23,7 @@ type Config struct {
 	Version      VersionConfig      `toml:"version"`
 	VimMode      VimModeConfig      `toml:"vim_mode"`
 	AgentName    AgentNameConfig    `toml:"agent_name"`
+	Fit          FitConfig          `toml:"fit"`
 }
 
 // Threshold defines a conditional style based on a numeric value.
@@ -31,11 +32,17 @@ type Threshold struct {
 	Style string  `toml:"style"`
 }
 
+// FitConfig holds settings for fitting the statusline to the terminal width.
+type FitConfig struct {
+	Margin int `toml:"margin"`
+}
+
 // ModelConfig holds model module settings.
 type ModelConfig struct {
 	Format   string `toml:"format"`
 	Style    string `toml:"style"`
 	Disabled bool   `toml:"disabled"`
+	Priority *int   `toml:"priority"`
 }
 
 // DirectoryConfig holds directory module settings.
@@ -46,6 +53,7 @@ type DirectoryConfig struct {
 	TruncationLength     int    `toml:"truncation_length"`
 	Hyperlink            bool   `toml:"hyperlink"`
 	HyperlinkURLTemplate string `toml:"hyperlink_url_template"`
+	Priority             *int   `toml:"priority"`
 }
 
 // CostConfig holds cost module settings.
@@ -54,6 +62,7 @@ type CostConfig struct {
 	Style      string      `toml:"style"`
 	Disabled   bool        `toml:"disabled"`
 	Thresholds []Threshold `toml:"thresholds"`
+	Priority   *int        `toml:"priority"`
 }
 
 // ContextConfig holds context module settings.
@@ -66,6 +75,7 @@ type ContextConfig struct {
 	BarFill    string      `toml:"bar_fill"`
 	BarEmpty   string      `toml:"bar_empty"`
 	Thresholds []Threshold `toml:"thresholds"`
+	Priority   *int        `toml:"priority"`
 }
 
 // GitBranchConfig holds git branch module settings.
@@ -76,6 +86,7 @@ type GitBranchConfig struct {
 	Mode             string `toml:"mode"` // "detailed" (default) or "simple"
 	Hyperlink        bool   `toml:"hyperlink"`
 	HyperlinkBaseURL string `toml:"hyperlink_base_url"`
+	Priority         *int   `toml:"priority"`
 }
 
 // SessionTimerConfig holds session timer module settings.
@@ -83,6 +94,7 @@ type SessionTimerConfig struct {
 	Format   string `toml:"format"`
 	Style    string `toml:"style"`
 	Disabled bool   `toml:"disabled"`
+	Priority *int   `toml:"priority"`
 }
 
 // LinesChangedConfig holds lines changed module settings.
@@ -91,6 +103,7 @@ type LinesChangedConfig struct {
 	AddedStyle   string `toml:"added_style"`
 	RemovedStyle string `toml:"removed_style"`
 	Disabled     bool   `toml:"disabled"`
+	Priority     *int   `toml:"priority"`
 }
 
 // VersionConfig holds version module settings.
@@ -98,6 +111,7 @@ type VersionConfig struct {
 	Format   string `toml:"format"`
 	Style    string `toml:"style"`
 	Disabled bool   `toml:"disabled"`
+	Priority *int   `toml:"priority"`
 }
 
 // AgentNameConfig holds agent name module settings.
@@ -105,6 +119,7 @@ type AgentNameConfig struct {
 	Format   string `toml:"format"`
 	Style    string `toml:"style"`
 	Disabled bool   `toml:"disabled"`
+	Priority *int   `toml:"priority"`
 }
 
 // UsageConfig holds usage module settings.
@@ -117,6 +132,7 @@ type UsageConfig struct {
 	BarFill    string      `toml:"bar_fill"`
 	BarEmpty   string      `toml:"bar_empty"`
 	Thresholds []Threshold `toml:"thresholds"`
+	Priority   *int        `toml:"priority"`
 }
 
 // VimModeConfig holds vim mode module settings.
@@ -124,6 +140,7 @@ type VimModeConfig struct {
 	Format   string `toml:"format"`
 	Style    string `toml:"style"`
 	Disabled bool   `toml:"disabled"`
+	Priority *int   `toml:"priority"`
 }
 
 const (
@@ -216,6 +233,45 @@ func Default() Config {
 			Disabled: true,
 		},
 	}
+}
+
+// Priority returns the configured priority for the module registered under
+// name (matching the registry keys in internal/render, e.g. "model",
+// "git_branch") and whether that module is ranked. An absent priority means
+// the module is unranked and therefore mandatory: selection never drops it,
+// regardless of available width (D1).
+func (c Config) Priority(name string) (int, bool) {
+	priorities := map[string]*int{
+		"model":         c.Model.Priority,
+		"directory":     c.Directory.Priority,
+		"cost":          c.Cost.Priority,
+		"context":       c.Context.Priority,
+		"git_branch":    c.GitBranch.Priority,
+		"session_timer": c.SessionTimer.Priority,
+		"lines_changed": c.LinesChanged.Priority,
+		"usage":         c.Usage.Priority,
+		"version":       c.Version.Priority,
+		"vim_mode":      c.VimMode.Priority,
+		"agent_name":    c.AgentName.Priority,
+	}
+
+	pointer, found := priorities[name]
+	if !found || pointer == nil {
+		return 0, false
+	}
+
+	return *pointer, true
+}
+
+// Margin returns the configured [fit] margin, clamped to zero when negative.
+// A negative margin is a decorative misconfiguration, not an error (D8): it
+// degrades to byte-identical (unmargined) output rather than failing render.
+func (c Config) Margin() int {
+	if c.Fit.Margin < 0 {
+		return 0
+	}
+
+	return c.Fit.Margin
 }
 
 // presetHeader is used to extract the preset field from a TOML file

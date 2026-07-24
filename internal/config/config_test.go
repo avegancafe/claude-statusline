@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"github.com/felipeelias/claude-statusline/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -103,4 +104,171 @@ func TestDefaultPath(t *testing.T) {
 	path := config.DefaultPath()
 	assert.Contains(t, path, "claude-statusline")
 	assert.Contains(t, path, "config.toml")
+}
+
+func TestPriorityAbsentIsUnranked(t *testing.T) {
+	cfg := config.Default()
+
+	priority, ranked := cfg.Priority("model")
+
+	assert.False(t, ranked)
+	assert.Equal(t, 0, priority)
+}
+
+func TestPriorityExplicitZeroIsRanked(t *testing.T) {
+	cfg := config.Default()
+	explicitZero := 0
+	cfg.Model.Priority = &explicitZero
+
+	priority, ranked := cfg.Priority("model")
+
+	assert.True(t, ranked)
+	assert.Equal(t, 0, priority)
+}
+
+func TestPriorityUnknownModuleIsUnranked(t *testing.T) {
+	cfg := config.Default()
+
+	priority, ranked := cfg.Priority("does_not_exist")
+
+	assert.False(t, ranked)
+	assert.Equal(t, 0, priority)
+}
+
+// TestPriorityPointerSurvivesPartialTableOverride pins BurntSushi/toml's
+// decode semantics (D1): decoding a TOML table that omits `priority` must
+// not clear a priority the base config already set.
+func TestPriorityPointerSurvivesPartialTableOverride(t *testing.T) {
+	var cfg config.Config
+
+	baseline := 10
+	cfg.Model.Priority = &baseline
+
+	_, err := toml.Decode(`
+[model]
+style = "italic"
+`, &cfg)
+	require.NoError(t, err)
+
+	require.NotNil(t, cfg.Model.Priority)
+	assert.Equal(t, baseline, *cfg.Model.Priority)
+	assert.Equal(t, "italic", cfg.Model.Style)
+}
+
+func TestLoadUserTOMLSetsPriorityOverPresetBase(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+preset = "catppuccin"
+
+[model]
+priority = 7
+`), 0o644))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+
+	priority, ranked := cfg.Priority("model")
+	assert.True(t, ranked)
+	assert.Equal(t, 7, priority)
+
+	// The preset itself ships zero priorities (D6): every other module
+	// stays unranked even though its [table] exists implicitly.
+	directoryPriority, directoryRanked := cfg.Priority("directory")
+	assert.False(t, directoryRanked)
+	assert.Equal(t, 0, directoryPriority)
+}
+
+func TestPriorityDecodesForEveryModule(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+[model]
+priority = 1
+[directory]
+priority = 2
+[cost]
+priority = 3
+[context]
+priority = 4
+[git_branch]
+priority = 5
+[session_timer]
+priority = 6
+[lines_changed]
+priority = 7
+[usage]
+priority = 8
+[version]
+priority = 9
+[vim_mode]
+priority = 10
+[agent_name]
+priority = 11
+`), 0o644))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+
+	cases := []struct {
+		module       string
+		wantPriority int
+	}{
+		{"model", 1},
+		{"directory", 2},
+		{"cost", 3},
+		{"context", 4},
+		{"git_branch", 5},
+		{"session_timer", 6},
+		{"lines_changed", 7},
+		{"usage", 8},
+		{"version", 9},
+		{"vim_mode", 10},
+		{"agent_name", 11},
+	}
+
+	for _, tc := range cases {
+		priority, ranked := cfg.Priority(tc.module)
+		assert.True(t, ranked, "module %s should be ranked", tc.module)
+		assert.Equal(t, tc.wantPriority, priority, "module %s priority", tc.module)
+	}
+}
+
+func TestFitMarginParses(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+[fit]
+margin = 3
+`), 0o644))
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, 3, cfg.Fit.Margin)
+	assert.Equal(t, 3, cfg.Margin())
+}
+
+func TestFitNegativeMarginClampsToZero(t *testing.T) {
+	cfg := config.Default()
+	cfg.Fit.Margin = -5
+
+	assert.Equal(t, 0, cfg.Margin())
+}
+
+func TestAllPresetsShipZeroRankedModules(t *testing.T) {
+	moduleNames := []string{
+		"model", "directory", "cost", "context", "git_branch",
+		"session_timer", "lines_changed", "usage", "version",
+		"vim_mode", "agent_name",
+	}
+
+	for _, presetName := range config.PresetNames() {
+		cfg, ok := config.ApplyPreset(presetName)
+		require.True(t, ok, "preset %s should be found", presetName)
+
+		for _, moduleName := range moduleNames {
+			_, ranked := cfg.Priority(moduleName)
+			assert.False(t, ranked, "preset %s module %s should ship unranked", presetName, moduleName)
+		}
+	}
 }

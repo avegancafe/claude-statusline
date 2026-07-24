@@ -13,6 +13,8 @@ import (
 )
 
 func TestPromptCommand(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	jsonInput := `{
 		"model": {"display_name": "Claude Opus 4"},
 		"cwd": "/tmp/test",
@@ -33,6 +35,8 @@ func TestPromptCommand(t *testing.T) {
 }
 
 func TestDefaultAction(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	jsonInput := `{
 		"model": {"display_name": "Test Model"},
 		"cwd": "/tmp",
@@ -81,6 +85,8 @@ func TestInitCommandAlreadyExists(t *testing.T) {
 }
 
 func TestTestCommand(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	var stdout bytes.Buffer
 	app := appcli.New("test")
 	app.Writer = &stdout
@@ -95,6 +101,8 @@ func TestTestCommand(t *testing.T) {
 }
 
 func TestThemesCommand(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
 	var stdout bytes.Buffer
 	app := appcli.New("test")
 	app.Writer = &stdout

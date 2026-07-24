@@ -209,6 +209,28 @@ func TestRenderNoPrioritiesNarrowColumnsByteIdentical(t *testing.T) {
 	assert.Equal(t, expected, result)
 }
 
+// D7 acceptance value: default preset, no priorities, a Cwd that is not a
+// git repo, wide width => byte-identical to today, including the doubled
+// separator around the empty $git_branch segment. git_branch renders ""
+// outside a repo (gitbranch.go), but corrected D7 says it is still a
+// present segment: both of its adjacent separators must survive.
+func TestRenderDefaultPresetGitBranchEmptyKeepsDoubledSeparator(t *testing.T) {
+	cfg := config.Default()
+	data := input.Data{
+		Model:         input.Model{DisplayName: "Claude Opus 4"},
+		Cwd:           t.TempDir(), // fresh temp dir: guaranteed not a git repo
+		Cost:          input.Cost{TotalCostUSD: 0.42},
+		ContextWindow: input.ContextWindow{UsedPercentage: 42.5},
+	}
+
+	result, err := render.Render(cfg, data, "200") // wide: nothing dropped anyway (no priorities)
+	require.NoError(t, err)
+
+	assert.Contains(t, result, "Claude Opus 4")
+	assert.Contains(t, result, "$0.42")
+	assert.Contains(t, result, " |  | ", "git_branch's empty render must not collapse its separators (D7)")
+}
+
 // Test 2: COLUMNS unset/""/"abc"/"80x24"/"0"/"-5" => everything rendered.
 func TestRenderUnknownColumnsVariants(t *testing.T) {
 	cfg := config.Default()

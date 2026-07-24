@@ -15,6 +15,17 @@ import (
 const (
 	configDirPerms  = 0750
 	configFilePerms = 0600
+
+	// unknownWidth is passed to render.Render wherever the terminal width is
+	// not being measured for real (previews). D5 requires previews to see
+	// an unknown width so they never drop a module.
+	unknownWidth = ""
+
+	// renderErrorMarker is written to stdout when render.Render fails, so
+	// Claude Code's statusline shows something instead of a blank line --
+	// today the only output goes to ErrWriter, which Claude Code never
+	// displays (D8).
+	renderErrorMarker = "(statusline error)"
 )
 
 // New creates the CLI application.
@@ -64,9 +75,12 @@ func promptAction(cmd *ucli.Context) error {
 		return nil
 	}
 
-	output, err := render.Render(cfg, data)
+	columns := os.Getenv("COLUMNS")
+
+	output, err := render.Render(cfg, data, columns)
 	if err != nil {
 		fmt.Fprintln(cmd.App.ErrWriter, "render error:", err)
+		fmt.Fprint(cmd.App.Writer, renderErrorMarker)
 
 		return nil
 	}
@@ -126,7 +140,7 @@ func testCommand() *ucli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			output, err := render.Render(cfg, mockInput())
+			output, err := render.Render(cfg, mockInput(), unknownWidth)
 			if err != nil {
 				return fmt.Errorf("rendering: %w", err)
 			}
@@ -154,7 +168,7 @@ func themesCommand() *ucli.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 
-			output, err := render.Render(userCfg, data)
+			output, err := render.Render(userCfg, data, unknownWidth)
 			if err != nil {
 				return fmt.Errorf("rendering current: %w", err)
 			}
@@ -163,7 +177,7 @@ func themesCommand() *ucli.Command {
 
 			for _, name := range config.PresetNames() {
 				cfg, _ := config.ApplyPreset(name)
-				output, err := render.Render(cfg, data)
+				output, err := render.Render(cfg, data, unknownWidth)
 				if err != nil {
 					return fmt.Errorf("rendering %s: %w", name, err)
 				}

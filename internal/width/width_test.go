@@ -1,6 +1,11 @@
 package width_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/felipeelias/claude-statusline/internal/width"
@@ -83,15 +88,70 @@ func TestVisibleStripsHyperlink(t *testing.T) {
 	}
 }
 
-// TestVisibleLocaleIndependent guards against the package-level
-// runewidth.StringWidth/NewCondition() trap: those are locale-derived via
-// init()->handleEnv() reading LANG/LC_CTYPE, so "▓" measures 1 under
-// en_US.UTF-8 but 2 under ja_JP.UTF-8 through that entry point. Visible must
-// use an explicit Condition and stay 1 regardless of the process locale.
-func TestVisibleLocaleIndependent(t *testing.T) {
-	t.Setenv("LANG", "ja_JP.UTF-8")
+// bannedRunewidthSymbols are the package-level go-runewidth entry points that
+// are locale-derived: runewidth's init() -> handleEnv() reads LANG/LC_CTYPE
+// once at process start and mutates the shared DefaultCondition, so e.g. "▓"
+// measures 1 under en_US.UTF-8 but 2 under a CJK locale through this path.
+// Visible must go through an explicit *runewidth.Condition instead.
+//
+// A runtime test that flips LANG via t.Setenv cannot catch a regression here:
+// the package's env read already happened before any test body runs, so it
+// passes against both a correct and an incorrect implementation alike (see
+// the retired TestVisibleLocaleIndependent, which was exactly that trap).
+// This guard parses the AST of the package's own non-test sources instead,
+// so it fails the moment a call to any of these symbols is reintroduced.
+var bannedRunewidthSymbols = map[string]bool{
+	"StringWidth":      true,
+	"NewCondition":     true,
+	"RuneWidth":        true,
+	"DefaultCondition": true,
+}
 
-	if got := width.Visible("▓"); got != 1 {
-		t.Errorf("Visible(▓) = %d, want 1 under ja_JP.UTF-8", got)
+// TestNoPackageLevelRunewidthCalls is the structural guard described above.
+func TestNoPackageLevelRunewidthCalls(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading package directory: %v", err)
 	}
+
+	fset := token.NewFileSet()
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+
+		checkFileForBannedRunewidthRefs(t, fset, name)
+	}
+}
+
+// checkFileForBannedRunewidthRefs parses one source file and fails the test
+// for every AST reference shaped like runewidth.<bannedSymbol> it finds.
+// Walking the syntax tree (rather than scanning raw text) means explanatory
+// comments that name these symbols in prose never trip the guard.
+func checkFileForBannedRunewidthRefs(t *testing.T, fset *token.FileSet, name string) {
+	t.Helper()
+
+	file, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parsing %s: %v", name, err)
+	}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		sel, isSelector := n.(*ast.SelectorExpr)
+		if !isSelector {
+			return true
+		}
+
+		pkgIdent, isIdent := sel.X.(*ast.Ident)
+		if !isIdent || pkgIdent.Name != "runewidth" || !bannedRunewidthSymbols[sel.Sel.Name] {
+			return true
+		}
+
+		t.Errorf("%s:%d: banned package-level reference runewidth.%s (locale-derived; use an explicit *runewidth.Condition)",
+			name, fset.Position(sel.Pos()).Line, sel.Sel.Name)
+
+		return true
+	})
 }

@@ -3,10 +3,12 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/BurntSushi/toml"
 	"github.com/felipeelias/claude-statusline/internal/config"
+	"github.com/felipeelias/claude-statusline/internal/render"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -304,13 +306,17 @@ func TestFitNegativeMarginClampsToZero(t *testing.T) {
 	assert.Equal(t, 0, cfg.Margin())
 }
 
-func TestAllPresetsShipZeroRankedModules(t *testing.T) {
-	moduleNames := []string{
-		"model", "directory", "cost", "context", "git_branch",
-		"session_timer", "lines_changed", "usage", "version",
-		"vim_mode", "agent_name",
-	}
+// moduleNames lists every module name registered with the statusline --
+// shared between TestAllPresetsShipZeroRankedModules and
+// TestModuleKeysetsStaySynchronized so there is only one hand-maintained
+// copy of it in this package.
+var moduleNames = []string{
+	"model", "directory", "cost", "context", "git_branch",
+	"session_timer", "lines_changed", "usage", "version",
+	"vim_mode", "agent_name",
+}
 
+func TestAllPresetsShipZeroRankedModules(t *testing.T) {
 	for _, presetName := range config.PresetNames() {
 		cfg, ok := config.ApplyPreset(presetName)
 		require.True(t, ok, "preset %s should be found", presetName)
@@ -320,4 +326,64 @@ func TestAllPresetsShipZeroRankedModules(t *testing.T) {
 			assert.False(t, ranked, "preset %s module %s should ship unranked", presetName, moduleName)
 		}
 	}
+}
+
+// TestModuleKeysetsStaySynchronized guards a latent footgun flagged at CP1:
+// there are three independent copies of the 11-module list --
+// internal/render/render.go's registry, this package's Priority accessor,
+// and moduleNames above. Adding a 12th module and missing just one of them
+// makes it silently mandatory forever: no error, no test failure, verified
+// by the expediter. This derives the ground-truth set reflectively from
+// Config's own struct shape (every field whose type has its own Priority
+// field), independent of any hand-maintained list, and checks all three
+// against it.
+func TestModuleKeysetsStaySynchronized(t *testing.T) {
+	expected := make(map[string]bool)
+
+	cfgType := reflect.TypeFor[config.Config]()
+	for fieldIndex := range cfgType.NumField() {
+		field := cfgType.Field(fieldIndex)
+		if field.Type.Kind() != reflect.Struct {
+			continue
+		}
+
+		if _, hasPriority := field.Type.FieldByName("Priority"); !hasPriority {
+			continue
+		}
+
+		tag, hasTag := field.Tag.Lookup("toml")
+		require.True(t, hasTag, "field %s has no toml tag", field.Name)
+
+		expected[tag] = true
+
+		// The Priority accessor must recognize this name: setting only
+		// this module's own Priority field must make cfg.Priority(tag)
+		// report ranked=true.
+		cfg := config.Default()
+
+		priorityField := reflect.ValueOf(&cfg).Elem().Field(fieldIndex).FieldByName("Priority")
+		require.True(t, priorityField.IsValid())
+
+		priority := 42
+		priorityField.Set(reflect.ValueOf(&priority))
+
+		_, ranked := cfg.Priority(tag)
+		assert.True(t, ranked, "config.Priority must recognize %q once its own Priority field is set", tag)
+	}
+
+	registry := render.ModuleFactory(config.Default())
+
+	registryNames := make(map[string]bool, len(registry))
+	for name := range registry {
+		registryNames[name] = true
+	}
+
+	assert.Equal(t, expected, registryNames, "render's module registry must match Config's Priority-bearing fields")
+
+	sweepNames := make(map[string]bool, len(moduleNames))
+	for _, name := range moduleNames {
+		sweepNames[name] = true
+	}
+
+	assert.Equal(t, expected, sweepNames, "the preset-sweep module list must match Config's Priority-bearing fields")
 }

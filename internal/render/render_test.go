@@ -1043,12 +1043,25 @@ func TestRenderDisabledExcludedFromCandidacyAtNarrowWidth(t *testing.T) {
 
 // Test 29: broken template behind disabled=true => no error (D7: never
 // rendered, so never a source of errors).
+//
+// CP2 follow-up: oracleData() leaves Cost.TotalDurationMs at zero, and
+// SessionTimerModule.Render returns ("", nil) whenever ms == 0
+// (session.go:20-23) BEFORE ever touching cfg.SessionTimer.Format -- so the
+// broken template was inert regardless of whether D7's disabled guard
+// worked. Proven vacuous: a mutation that lets a disabled module's render
+// error propagate (breaking the guard, while keeping the module mandatory
+// and empty so only error semantics change) left the whole suite green.
+// Setting TotalDurationMs non-zero makes the template path live, so this
+// now actually exercises "disabled modules are never rendered".
 func TestRenderDisabledModuleBrokenTemplateNoError(t *testing.T) {
 	cfg := config.Default()
 	cfg.Format = "$model | $session_timer"
 	cfg.SessionTimer.Format = "{{.NoSuchField}}" // would error if ever executed
 
-	result, err := render.Render(cfg, oracleData(), unknownWidth)
+	data := oracleData()
+	data.Cost.TotalDurationMs = 5000 // makes the session_timer template path live
+
+	result, err := render.Render(cfg, data, unknownWidth)
 	require.NoError(t, err)
 	assert.Equal(t, oracleModel+" | ", result)
 }

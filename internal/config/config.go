@@ -357,8 +357,11 @@ format = "$directory | $git_branch | $model | $cost | $context"
 # Module configuration. Each module supports format, style, disabled, and priority.
 # Styles: "bold", "dim", "italic", "fg:#hex", "bg:#hex", "208"
 # priority: unset (default) means mandatory, never dropped. Set it to make a
-# module droppable -- the lowest priority drops first when the line doesn't
-# fit, higher is kept longer. See the README's Priorities section for details.
+# module droppable -- droppable modules are tried highest priority first and
+# each is kept only if it (plus everything already kept) still fits; one that
+# doesn't fit is skipped, and lower-priority modules are still tried after it,
+# so priority sets the trial order, not a width-based drop order. See the
+# README's Priorities section for details.
 
 # [model]
 # format = "{{.DisplayName}}"

@@ -114,6 +114,8 @@ style = "fg:#11111b bg:#cba6f7 bold"
 | `vim_mode` | off | Vim mode indicator (NORMAL, INSERT, etc.) |
 | `agent_name` | off | Agent name when running with `--agent` |
 
+Any module can be made droppable when the line doesn't fit your terminal — see [Priorities](#priorities) below.
+
 ### Enabling modules
 
 To enable a disabled module, set `disabled = false` and add it to the format string:
@@ -124,6 +126,56 @@ format = "$directory | $git_branch | $model | $cost | $context | $session_timer"
 [session_timer]
 disabled = false
 ```
+
+### Priorities
+
+By default every module is mandatory: nothing is ever dropped, no matter how narrow the terminal. Set `priority = N` on a module to make it droppable. When the line doesn't fit `COLUMNS`, the lowest-priority module drops first, then the next-lowest, and so on, until the line fits or only mandatory modules remain. Higher priority means kept longer. A module with no `priority` set stays mandatory regardless of what priorities other modules have.
+
+No format rewriting is needed — this works on the stock default format the moment you set a priority:
+
+```toml
+format = "$model | $cost | $context"
+
+[cost]
+priority = 20
+
+[context]
+priority = 10
+```
+
+| `COLUMNS` | Output |
+|-----------|--------|
+| 60 | `Opus \| $0.42 \| ██░░░ 42%` |
+| 24 | `Opus \| $0.42 \| ██░░░ 42%` (exact fit) |
+| 18 | `Opus \| $0.42` |
+| 10 | `Opus` |
+
+`$model` has no priority, so it's mandatory and never drops. `$context` (priority 10) drops before `$cost` (priority 20) once the line stops fitting.
+
+#### Separators travel with their module
+
+There's no separate syntax for a separator — a literal run of text between two modules (the ` | ` above, an arrow in a powerline preset) is inferred from the format string and travels with whichever modules are still standing. When a module between two others is dropped, its separator disappears with it, and exactly one separator renders between whichever two modules end up next to each other:
+
+`format = "$model | $context | $cost"` with `$context` dropped renders `Opus | $0.42` — one separator, not two and not zero.
+
+A literal run before the first module or after the last one (tokyo-night's leading `[░▒▓]` gradient, a powerline preset's trailing cap) is decoration, not a separator, and always renders regardless of what gets dropped.
+
+#### `[fit] margin`
+
+```toml
+[fit]
+margin = 3
+```
+
+`margin` is subtracted from `COLUMNS` before fitting; it defaults to `0`. Set `margin = 3` for Claude Code: it renders the status line inside its own chrome, and content reaching the exact terminal edge gets truncated by that chrome rather than by claude-statusline. A negative margin is accepted rather than rejected, and simply clamps to `0`.
+
+`COLUMNS` is only exported by Claude Code on **v2.1.153 and later**. On older versions it's unset, so nothing is ever dropped — priorities are silently inert (the status line always renders in full), not broken.
+
+#### Known limitations
+
+- **A ranked module can't be un-ranked once a preset sets it.** TOML has no `null`, so a config decoded over a preset that already set `priority` on a module can only replace that number with another one — `priority = 0` still means "ranked, drops first," not "back to mandatory." No built-in preset sets any priorities today, so this only matters if a future preset does.
+- **An empty module still costs its separator's width.** A module that renders no text — `$git_branch` outside a repository, for example — is still present and still anchors the separators next to it. `format = "$git_branch | $cost"` outside a repo with `[cost] priority = 1` renders ` | $0.42` at `COLUMNS` 8 and above, but renders blank at `COLUMNS` 5 through 7, even though `$0.42` alone (5 columns) would otherwise fit. This falls out of measuring and emitting the whole composed line as one unit, and fixing it would mean giving up either byte-identical output when no priorities are set, or the single-pass fitting algorithm.
+- **Dropping a module on a powerline preset can leave one mis-hued glyph.** Dropping composes cleanly **iff adjacent styled runs share a single background** — no background at all (`default`, `minimal`), or one background shared between them. It fails only where a separator encodes a transition between two *different* backgrounds, which is exactly what the arrows in the four powerline presets (`pastel-powerline`, `tokyo-night`, `gruvbox-rainbow`, `catppuccin`) do: the trailing cap is decoration, so it always renders, and once a drop removes the arrow that used to lead into it, the cap is left painted for a block that's no longer next to it — one glyph in a colour matching nothing adjacent. This is a property of those presets' colour scheme, not a bug in a particular format string, and it isn't introduced by priorities: the same four presets already show two directly-adjacent arrows around an empty `$git_branch` today, with or without any priority set — that's pre-existing behaviour, unchanged by this feature.
 
 ### Model module
 

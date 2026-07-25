@@ -346,12 +346,24 @@ preset = "default"
 # When using a preset, you typically don't need to change the format.
 format = "$directory | $git_branch | $model | $cost | $context"
 
-# Module configuration. Each module supports format, style, and disabled.
+# [fit] controls fitting the line to your terminal width, used only by modules
+# that set a priority below. margin is subtracted from COLUMNS before fitting;
+# set margin = 3 for Claude Code, which renders the status line inside its own
+# chrome and truncates content that reaches the exact edge. Requires Claude
+# Code 2.1.153+, which exports COLUMNS; on older versions nothing is dropped.
+# [fit]
+# margin = 3
+
+# Module configuration. Each module supports format, style, disabled, and priority.
 # Styles: "bold", "dim", "italic", "fg:#hex", "bg:#hex", "208"
+# priority: unset (default) means mandatory, never dropped. Set it to make a
+# module droppable -- the lowest priority drops first when the line doesn't
+# fit, higher is kept longer. See the README's Priorities section for details.
 
 # [model]
 # format = "{{.DisplayName}}"
 # style = "bold"
+# priority = 100
 # Template fields: DisplayName, ID, Short (e.g. "Sonnet 4.6")
 
 # [directory]
@@ -360,6 +372,7 @@ format = "$directory | $git_branch | $model | $cost | $context"
 # truncation_length = 3
 # hyperlink = false
 # hyperlink_url_template = "file://{{.AbsPathEncoded}}"  # or "vscode://file{{.AbsPath}}"
+# priority = 90
 
 # [cost]
 # format = '${{printf "%.2f" .TotalCostUSD}}'
@@ -368,6 +381,7 @@ format = "$directory | $git_branch | $model | $cost | $context"
 #   { above = 1.0, style = "yellow" },
 #   { above = 5.0, style = "red" },
 # ]
+# priority = 80
 
 # [context]
 # format = '{{.Bar}} {{printf "%.0f" .UsedPct}}%'
@@ -380,12 +394,14 @@ format = "$directory | $git_branch | $model | $cost | $context"
 #   { above = 50, style = "yellow" },
 #   { above = 90, style = "red" },
 # ]
+# priority = 70
 
 # [git_branch]
 # mode = "detailed"  # "detailed" (default) or "simple" (fast, branch only)
 # style = "cyan"
 # hyperlink = false
 # hyperlink_base_url = ""  # auto-detected from git remote; set to override
+# priority = 60
 # Template fields: Branch, InWorktree, IsDirty, IsClean,
 #   Staged, Modified, Untracked, Ahead, Behind, Conflicts
 
@@ -395,22 +411,26 @@ format = "$directory | $git_branch | $model | $cost | $context"
 # disabled = false
 # format = "v{{.Version}}"
 # style = "dim"
+# priority = 10
 
 # [session_timer]
 # disabled = false
 # format = "{{if .Hours}}{{.Hours}}h{{end}}{{printf \"%02d\" .Minutes}}m{{printf \"%02d\" .Seconds}}s"
 # style = "dim"
+# priority = 10
 
 # [lines_changed]
 # disabled = false
 # format = "+{{.Added}} -{{.Removed}}"
 # added_style = "green"
 # removed_style = "red"
+# priority = 10
 
 # [agent_name]
 # disabled = false
 # format = "{{.Name}}"
 # style = "bold magenta"
+# priority = 10
 # Template fields: Name (e.g. "security-reviewer")
 
 # Requires Claude Code 2.1.80+ which provides rate_limits in the status line payload.
@@ -427,12 +447,14 @@ format = "$directory | $git_branch | $model | $cost | $context"
 #   { above = 75, style = "yellow" },
 #   { above = 90, style = "red" },
 # ]
+# priority = 10
 # Template fields: BlockPct, WeeklyPct, BlockBar, WeeklyBar, BlockResets, WeeklyResets
 
 # [vim_mode]
 # disabled = false
 # format = "{{.Mode}}"
 # style = "bold yellow"
+# priority = 10
 # Template fields: Mode (e.g. "NORMAL", "INSERT")
 `
 

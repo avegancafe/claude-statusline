@@ -628,6 +628,43 @@ func TestRenderThreeWayTieFormatOrder(t *testing.T) {
 	assert.Equal(t, strings.Repeat("x", 20), result, "model and cost (format order) survive, context drops")
 }
 
+// Test 13 (asymmetric fixture): D1/D4 specify "ties -> format order", and
+// nothing pinned it directly -- the expediter mutated the comparator to
+// genuinely reverse format order among ties and the entire suite survived.
+// TestRenderThreeWayTieFormatOrder above can't catch that: its three tied
+// segments all render identical text, so reversing which one is admitted
+// is unobservable (symmetric by construction). This fixture ties two
+// DIFFERENT-width segments so admitting the wrong one produces a visibly
+// different, wrong result -- it depends only on the specified tie-break,
+// not on any sort implementation detail (see the corrected docstring on
+// TestRenderThreeWayTieFormatOrder for why that distinction matters).
+func TestRenderTieBreakIsFormatOrderNotReversed(t *testing.T) {
+	cfg := config.Default()
+	cfg.Format = "$model | $cost"
+	cfg.Model.Priority = new(5)
+	cfg.Cost.Priority = new(5)
+
+	tests := map[string]struct {
+		columns  string
+		expected string
+	}{
+		"columns=6":  {columns: "6", expected: oracleModel},
+		"columns=8":  {columns: "8", expected: oracleModel},
+		"columns=11": {columns: "11", expected: oracleModel},
+		// control: both fit at 12 (4+3+5), proving the fixture isn't
+		// accidentally width-starved.
+		"columns=12": {columns: "12", expected: oracleModel + " | " + oracleCost},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			result, err := render.Render(cfg, oracleData(), test.columns)
+			require.NoError(t, err)
+			assert.Equal(t, test.expected, result)
+		})
+	}
+}
+
 // Test 14: sweep COLUMNS 1->120 => Visible(output) <= usable, or only the
 // mandatory baseline remains. The fixture includes a leading decoration
 // run, a powerline glyph, and a CJK rune, per the plan's fixture-hygiene

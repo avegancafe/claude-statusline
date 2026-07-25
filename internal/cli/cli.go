@@ -21,11 +21,12 @@ const (
 	// an unknown width so they never drop a module.
 	unknownWidth = ""
 
-	// renderErrorMarker is written to stdout when render.Render fails, so
-	// Claude Code's statusline shows something instead of a blank line --
-	// today the only output goes to ErrWriter, which Claude Code never
+	// statuslineErrorMarker is written to stdout whenever promptAction fails
+	// -- a bad config file, malformed stdin JSON, or a render error -- so
+	// Claude Code's statusline shows something instead of a blank line.
+	// Today the only diagnostic goes to ErrWriter, which Claude Code never
 	// displays (D8).
-	renderErrorMarker = "(statusline error)"
+	statuslineErrorMarker = "(statusline error)"
 )
 
 // New creates the CLI application.
@@ -59,6 +60,7 @@ func promptAction(cmd *ucli.Context) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		fmt.Fprintln(cmd.App.ErrWriter, "config error:", err)
+		fmt.Fprint(cmd.App.Writer, statuslineErrorMarker)
 
 		return nil
 	}
@@ -71,6 +73,7 @@ func promptAction(cmd *ucli.Context) error {
 	data, err := input.Parse(reader)
 	if err != nil {
 		fmt.Fprintln(cmd.App.ErrWriter, "input error:", err)
+		fmt.Fprint(cmd.App.Writer, statuslineErrorMarker)
 
 		return nil
 	}
@@ -80,7 +83,7 @@ func promptAction(cmd *ucli.Context) error {
 	output, err := render.Render(cfg, data, columns)
 	if err != nil {
 		fmt.Fprintln(cmd.App.ErrWriter, "render error:", err)
-		fmt.Fprint(cmd.App.Writer, renderErrorMarker)
+		fmt.Fprint(cmd.App.Writer, statuslineErrorMarker)
 
 		return nil
 	}

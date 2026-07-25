@@ -214,6 +214,14 @@ func TestRenderNoPrioritiesNarrowColumnsByteIdentical(t *testing.T) {
 // separator around the empty $git_branch segment. git_branch renders ""
 // outside a repo (gitbranch.go), but corrected D7 says it is still a
 // present segment: both of its adjacent separators must survive.
+//
+// CP2 follow-up: the original version of this test asserted
+// Contains(" |  | "), which is killed by zero of 19 mutants -- it would
+// also pass if separators were never collapsed ANYWHERE, proving nothing
+// about git_branch specifically. This version is byte-exact, built from the
+// real, untouched module Renderers (directory, git_branch, model, cost,
+// context -- none of which T4/T4b touch), not derived from render.go's own
+// logic.
 func TestRenderDefaultPresetGitBranchEmptyKeepsDoubledSeparator(t *testing.T) {
 	cfg := config.Default()
 	data := input.Data{
@@ -226,9 +234,24 @@ func TestRenderDefaultPresetGitBranchEmptyKeepsDoubledSeparator(t *testing.T) {
 	result, err := render.Render(cfg, data, "200") // wide: nothing dropped anyway (no priorities)
 	require.NoError(t, err)
 
-	assert.Contains(t, result, "Claude Opus 4")
-	assert.Contains(t, result, "$0.42")
-	assert.Contains(t, result, " |  | ", "git_branch's empty render must not collapse its separators (D7)")
+	dirR, err := modules.NewDirectoryModule().Render(data, cfg)
+	require.NoError(t, err)
+
+	branchR, err := modules.GitBranchModule{}.Render(data, cfg)
+	require.NoError(t, err)
+	require.Empty(t, branchR, "fixture must exercise git_branch's empty-render path")
+
+	modelR, err := modules.ModelModule{}.Render(data, cfg)
+	require.NoError(t, err)
+
+	costR, err := modules.CostModule{}.Render(data, cfg)
+	require.NoError(t, err)
+
+	contextR, err := modules.ContextModule{}.Render(data, cfg)
+	require.NoError(t, err)
+
+	expected := dirR + " | " + branchR + " | " + modelR + " | " + costR + " | " + contextR
+	assert.Equal(t, expected, result)
 }
 
 // Test 2: COLUMNS unset/""/"abc"/"80x24"/"0"/"-5" => everything rendered.
@@ -324,6 +347,32 @@ func TestRenderRankedEmptyModuleWideKeepsDoubledSeparator(t *testing.T) {
 	assert.Equal(t, expected, result)
 }
 
+// New (plan reconciled to code): an early draft of the plan called an
+// enabled module that renders "" "not rankable", but render.go derives
+// rankability from configured priority alone -- a ranked empty module IS a
+// genuine candidate and CAN be dropped at narrow width, recovering its
+// separators' columns. The code's behaviour is correct; this pins it so it
+// cannot silently flip.
+func TestRenderRankedEmptyModuleCanBeDroppedToRecoverSeparatorWidth(t *testing.T) {
+	cfg := config.Default()
+	cfg.Format = "$model | $version | $cost"
+	cfg.Version.Priority = new(1)
+
+	useModules(t, map[string]modules.Module{
+		"model":   fakeModule{text: strings.Repeat("m", 10)},
+		"version": fakeModule{text: ""},
+		"cost":    fakeModule{text: strings.Repeat("c", 5)},
+	})
+
+	result, err := render.Render(cfg, input.Data{}, "19")
+	require.NoError(t, err)
+
+	// Keeping version (empty, but ranked) would cost 21: both its
+	// separators render around its empty content (10+3+0+3+5). Dropping it
+	// merges the two gaps into one via the LAST-run rule, costing 18 <= 19.
+	assert.Equal(t, strings.Repeat("m", 10)+" | "+strings.Repeat("c", 5), result)
+}
+
 // Test 6: literal braces render exactly as today, regardless of ranking --
 // braces are ordinary literals, never grammar (D2).
 func TestRenderLiteralBracesUnaffected(t *testing.T) {
@@ -346,6 +395,47 @@ func TestRenderLiteralBracesUnaffected(t *testing.T) {
 			assert.Equal(t, test.expected, result)
 		})
 	}
+}
+
+// --- literal-run maximality (CP2 BLOCKING 1) ----------------------------
+// Untested at T4, and the break is severe: a mutation that flushes the
+// literal buffer after every styled span (instead of only before the next
+// module ref) leaves the entire 32-test suite green, yet silently discards
+// every separator built from consecutive styled spans, or the
+// "text [styled] text" idiom -- the normal way a developer writes a styled
+// separator in their own config.
+
+// (a) consecutive styled spans with no module ref between them are one
+// maximal run; both spans must survive.
+func TestRenderConsecutiveStyledSpansFormOneMaximalRun(t *testing.T) {
+	cfg := config.Default()
+	cfg.Format = "$model[A](dim)[B](dim)$cost"
+
+	useModules(t, map[string]modules.Module{
+		"model": fakeModule{text: "M"},
+		"cost":  fakeModule{text: "C"},
+	})
+
+	result, err := render.Render(cfg, input.Data{}, unknownWidth)
+	require.NoError(t, err)
+	assert.Equal(t, "M\033[2mA\033[0m\033[2mB\033[0mC", result)
+}
+
+// (b) the "text [styled] text" separator idiom -- plain text around a
+// styled span, with no module ref between them -- is also one maximal run;
+// the whole thing survives or collapses as a single unit.
+func TestRenderStyledSeparatorIdiomSurvivesAsOneRun(t *testing.T) {
+	cfg := config.Default()
+	cfg.Format = "$model [·](dim) $cost"
+
+	useModules(t, map[string]modules.Module{
+		"model": fakeModule{text: "M"},
+		"cost":  fakeModule{text: "C"},
+	})
+
+	result, err := render.Render(cfg, input.Data{}, unknownWidth)
+	require.NoError(t, err)
+	assert.Equal(t, "M \033[2m·\033[0m C", result)
 }
 
 // --- selection (tests 7-16) --------------------------------------------
@@ -499,9 +589,22 @@ func TestRenderExactFitBoundary(t *testing.T) {
 	assert.Equal(t, strings.Repeat("m", 10), oneOver, "total==usable+1: exactly one drop")
 }
 
-// Test 13: three-way tie => format order. Requires sort.SliceStable --
-// sort.Slice is unstable and would pass a two-element tie by luck; this
-// uses three to make an accidental pass much less likely.
+// Test 13: three-way tie => format order.
+//
+// CP2 correction: this fixture does not empirically discriminate
+// sort.Slice from sort.SliceStable on the current toolchain -- verified by
+// mutation (swapping in sort.Slice here still passes this test, and every
+// other test in the suite). A fully-tied comparator reports every pair as
+// "not less", so Go's current sort.Slice implementation does no reordering
+// work at all and happens to preserve input order regardless of size (also
+// verified up to 50 tied elements). A larger, interspersed
+// tied/non-tied pattern CAN be made to diverge (proven separately), but
+// that construction depends on undocumented pdqsort partitioning behaviour
+// that Go's sort.Slice contract explicitly does not guarantee, and could
+// silently stop discriminating on a future Go release. sort.SliceStable is
+// used here because determinism is a correctness requirement BY CONTRACT
+// (D4/D10 need reproducible format-order output for ties), not because
+// this specific fixture can currently catch a regression to sort.Slice.
 func TestRenderThreeWayTieFormatOrder(t *testing.T) {
 	cfg := config.Default()
 	cfg.Format = "$model$cost$context"
@@ -552,6 +655,30 @@ func TestRenderColumnsSweepNeverExceedsUsable(t *testing.T) {
 	}
 }
 
+// Test 14 (complementary): the sweep above only catches OVER-counting
+// (which causes overflow); it is blind to UNDER-counting (e.g.
+// len()-instead-of-Visible on a multi-byte rune), because under-counting
+// only causes unnecessary under-filling, never overflow, so the sweep's
+// "Visible(output) <= usable" assertion holds regardless. This test pins
+// one admission decision directly: a CJK candidate is genuinely 4 visible
+// columns but 6 bytes -- usable=5 admits it only if measured in display
+// columns, not bytes.
+func TestRenderColumnsSweepCatchesUndercounting(t *testing.T) {
+	cfg := config.Default()
+	cfg.Format = formatModelCost
+	cfg.Cost.Priority = new(1)
+
+	useModules(t, map[string]modules.Module{
+		"model": fakeModule{text: "M"},
+		"cost":  fakeModule{text: "中中"}, //nolint:gosmopolitan // deliberate CJK fixture, 4 cols/6 bytes
+	})
+
+	result, err := render.Render(cfg, input.Data{}, "5")
+	require.NoError(t, err)
+	//nolint:gosmopolitan // deliberate CJK fixture, matches the injected fake module's text
+	assert.Equal(t, "M中中", result, "1+4=5<=5 in display columns, even though 1+6=7>5 in bytes")
+}
+
 // Test 15: mandatory alone > usable => emitted, not truncated, not blanked.
 func TestRenderMandatoryOverflowNeverTruncated(t *testing.T) {
 	cfg := config.Default()
@@ -569,19 +696,31 @@ func TestRenderMandatoryOverflowNeverTruncated(t *testing.T) {
 // Test 16: usable <= 0 (via a margin that consumes all of COLUMNS) =>
 // unknown => everything rendered.
 func TestRenderMarginClampsUsableToUnknown(t *testing.T) {
-	cfg := config.Default()
-	cfg.Format = formatModelCost
-	cfg.Cost.Priority = new(1)
-	cfg.Fit.Margin = 20
+	tests := map[string]struct {
+		columns string
+		margin  int
+	}{
+		"usable < 0":  {columns: "10", margin: 20}, // usable = 10-20 = -10
+		"usable == 0": {columns: "20", margin: 20}, // usable = 20-20 = 0 (the actual boundary)
+	}
 
-	useModules(t, map[string]modules.Module{
-		"model": fakeModule{text: strings.Repeat("m", 10)},
-		"cost":  fakeModule{text: strings.Repeat("c", 50)},
-	})
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Format = formatModelCost
+			cfg.Cost.Priority = new(1)
+			cfg.Fit.Margin = test.margin
 
-	result, err := render.Render(cfg, input.Data{}, "10") // usable = 10-20 = -10
-	require.NoError(t, err)
-	assert.Equal(t, strings.Repeat("m", 10)+strings.Repeat("c", 50), result)
+			useModules(t, map[string]modules.Module{
+				"model": fakeModule{text: strings.Repeat("m", 10)},
+				"cost":  fakeModule{text: strings.Repeat("c", 50)},
+			})
+
+			result, err := render.Render(cfg, input.Data{}, test.columns)
+			require.NoError(t, err)
+			assert.Equal(t, strings.Repeat("m", 10)+strings.Repeat("c", 50), result)
+		})
+	}
 }
 
 // --- separator inference (tests 17-24, 26-27): the core of the design ---
@@ -822,14 +961,42 @@ func TestRenderDroppableModuleErrorFailsRender(t *testing.T) {
 // Test 28: ranked + disabled, narrow => excluded from candidacy AND its
 // separators are preserved, not collapsed. Setting a priority on one module
 // must never change how an unrelated disabled module renders.
-func TestRenderDisabledIgnoresItsOwnPriority(t *testing.T) {
+//
+// CP2 BLOCKING 2: the original version of this test ran at unknownWidth,
+// where selectSurvivors returns before the selection loop runs at all, so
+// it could never observe candidacy -- proven vacuous: a mutation that lets
+// a disabled+ranked module become a droppable candidate still passed it.
+// This version forces a real selection decision by using a narrow width
+// with a genuine ranked competitor (cost), so session_timer's exclusion
+// from candidacy is actually exercised: session_timer's own priority (100,
+// the highest in the fixture) would, if it were ever treated as a real
+// candidate, be tried first and could be rejected by width like any other
+// -- but being disabled, it must always survive regardless.
+func TestRenderDisabledExcludedFromCandidacyAtNarrowWidth(t *testing.T) {
 	cfg := config.Default()
 	cfg.Format = "$model | $session_timer | $cost"
-	cfg.SessionTimer.Priority = new(100) // disabled wins regardless
+	cfg.SessionTimer.Priority = new(100) // highest priority, tried first if ever a candidate
+	cfg.Cost.Priority = new(1)
 
-	result, err := render.Render(cfg, oracleData(), unknownWidth)
+	original := render.ModuleFactory
+	render.ModuleFactory = func(config.Config) map[string]render.ModuleEntry {
+		return map[string]render.ModuleEntry{
+			"model":         {Module: fakeModule{text: strings.Repeat("M", 10)}},
+			"session_timer": {Module: fakeModule{text: "SHOULD-NEVER-RENDER"}, Disabled: true},
+			"cost":          {Module: fakeModule{text: strings.Repeat("C", 5)}},
+		}
+	}
+	t.Cleanup(func() { render.ModuleFactory = original })
+
+	result, err := render.Render(cfg, input.Data{}, "12")
 	require.NoError(t, err)
-	assert.Equal(t, oracleModel+" | "+" | "+oracleCost, result)
+
+	// session_timer (disabled) always survives and anchors its preceding
+	// separator, regardless of its own (highest) priority and regardless
+	// of width. cost is genuinely too wide to fit alongside it (10+3+5=18
+	// > 12) and is correctly dropped -- but that is unrelated to session_timer,
+	// which must never be subject to a width check at all.
+	assert.Equal(t, strings.Repeat("M", 10)+" | ", result)
 }
 
 // Test 29: broken template behind disabled=true => no error (D7: never

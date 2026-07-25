@@ -147,6 +147,47 @@ func TestPromptCommandRenderErrorShowsStdoutMarker(t *testing.T) {
 	assert.Contains(t, stderr.String(), "render error:")
 }
 
+// TestPromptCommandConfigErrorShowsStdoutMarker verifies D8's CP2 fix:
+// the marker was previously wired to the render-error path only. A
+// malformed config file used to fail silently -- ErrWriter only, exit 0,
+// blank stdout -- exactly the invisibility D8 exists to fix.
+func TestPromptCommandConfigErrorShowsStdoutMarker(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	err := os.WriteFile(configPath, []byte("not valid = [totally broken toml"), 0644)
+	require.NoError(t, err)
+
+	var stdout, stderr bytes.Buffer
+	app := appcli.New("test")
+	app.Writer = &stdout
+	app.ErrWriter = &stderr
+
+	runErr := app.Run([]string{"claude-statusline", "--config", configPath, "prompt"})
+	require.NoError(t, runErr, "D8: still exit 0 on config error")
+
+	assert.Contains(t, stdout.String(), "(statusline error)")
+	assert.Contains(t, stderr.String(), "config error:")
+}
+
+// TestPromptCommandInputErrorShowsStdoutMarker verifies D8's CP2 fix for
+// the third invisible path: malformed stdin JSON used to fail silently in
+// the same way as a config or render error.
+func TestPromptCommandInputErrorShowsStdoutMarker(t *testing.T) {
+	t.Setenv("CLAUDE_STATUSLINE_CONFIG", filepath.Join(t.TempDir(), "config.toml"))
+
+	var stdout, stderr bytes.Buffer
+	app := appcli.New("test")
+	app.Reader = strings.NewReader("not valid json {{{")
+	app.Writer = &stdout
+	app.ErrWriter = &stderr
+
+	runErr := app.Run([]string{"claude-statusline", "prompt"})
+	require.NoError(t, runErr, "D8: still exit 0 on input error")
+
+	assert.Contains(t, stdout.String(), "(statusline error)")
+	assert.Contains(t, stderr.String(), "input error:")
+}
+
 // TestPromptCommandColumnsDropsLowPriorityModule verifies D5's plumbing end
 // to end: COLUMNS is read from the environment in internal/cli and reaches
 // render.Render, so a narrow terminal actually drops the lower-priority

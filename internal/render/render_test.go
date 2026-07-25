@@ -224,9 +224,14 @@ func TestRenderNoPrioritiesNarrowColumnsByteIdentical(t *testing.T) {
 // logic.
 func TestRenderDefaultPresetGitBranchEmptyKeepsDoubledSeparator(t *testing.T) {
 	cfg := config.Default()
+
+	// t.TempDir() guarantees a fresh directory, not a non-repo one -- git
+	// walks upward through ancestors. Holds on a normal machine (TMPDIR
+	// unset, no git ancestor above /tmp); if TMPDIR ever sat inside a repo,
+	// this fails loudly via require.Empty(branchR) below, not silently.
 	data := input.Data{
 		Model:         input.Model{DisplayName: "Claude Opus 4"},
-		Cwd:           t.TempDir(), // fresh temp dir: guaranteed not a git repo
+		Cwd:           t.TempDir(),
 		Cost:          input.Cost{TotalCostUSD: 0.42},
 		ContextWindow: input.ContextWindow{UsedPercentage: 42.5},
 	}

@@ -1104,3 +1104,67 @@ func TestRenderUnknownModuleAnchorsSeparators(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, oracleModel+" | "+" | "+oracleCost, result)
 }
+
+// $fill is elastic whitespace: it absorbs the slack so what follows sits flush
+// against the usable width. Emission expands it; MEASUREMENT must not, or every
+// line would be exactly `usable` wide, the fit test would always pass, and
+// nothing would ever drop.
+func TestRenderFillFlushesRight(t *testing.T) {
+	cfg := config.Default()
+	cfg.Format = "$model$fill$cost"
+
+	// model=4 ("Opus"), cost=5 ("$0.42"), so content is 9 columns.
+	// usable = 40 - margin 0 => fill absorbs 40-9 = 31.
+	result, err := render.Render(cfg, oracleData(), "40")
+	require.NoError(t, err)
+	assert.Equal(t, 40, width.Visible(result), "the line must end flush at usable")
+	assert.Equal(t, oracleModel+strings.Repeat(" ", 31)+oracleCost, result)
+}
+
+// The load-bearing property: measuring the fill at its expanded width would
+// make the fit test vacuous. With the fill measured at [fit] gap instead, a
+// ranked module that cannot fit alongside it is still dropped.
+func TestRenderFillDoesNotDefeatDropping(t *testing.T) {
+	cfg := config.Default()
+	cfg.Format = "$model$fill$cost"
+	cfg.Cost.Priority = new(10)
+	gap := 10
+	cfg.Fit.Gap = &gap
+
+	// measured width = model 4 + gap 10 + cost 5 = 19 > 15, so cost drops.
+	// If the fill were measured expanded, the total would always equal usable
+	// and cost would survive at every width.
+	result, err := render.Render(cfg, oracleData(), "15")
+	require.NoError(t, err)
+	assert.Equal(t, oracleModel+strings.Repeat(" ", 11)+"", result,
+		"cost dropped; fill still expands to flush the survivors")
+	assert.Equal(t, 15, width.Visible(result))
+
+	// One column wider and it fits: 4+10+5 = 19 <= 19.
+	result, err = render.Render(cfg, oracleData(), "19")
+	require.NoError(t, err)
+	assert.Contains(t, result, oracleCost, "cost admitted once the gap-measured line fits")
+	assert.Equal(t, 19, width.Visible(result))
+}
+
+// Unknown width has nothing to flush against, so the fill collapses to gap.
+func TestRenderFillUnknownWidthCollapsesToGap(t *testing.T) {
+	cfg := config.Default()
+	cfg.Format = "$model$fill$cost"
+	gap := 3
+	cfg.Fit.Gap = &gap
+
+	result, err := render.Render(cfg, oracleData(), unknownWidth)
+	require.NoError(t, err)
+	assert.Equal(t, oracleModel+"   "+oracleCost, result)
+}
+
+// A format without $fill is completely unaffected, at any width.
+func TestRenderWithoutFillUnchanged(t *testing.T) {
+	cfg := config.Default()
+	cfg.Format = "$model | $cost"
+
+	narrow, err := render.Render(cfg, oracleData(), "40")
+	require.NoError(t, err)
+	assert.Equal(t, oracleModel+" | "+oracleCost, narrow, "no fill => no padding, no flush")
+}

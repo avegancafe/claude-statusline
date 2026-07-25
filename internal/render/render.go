@@ -50,6 +50,8 @@ func defaultModuleFactory(cfg config.Config) map[string]ModuleEntry {
 // The order matters: styled text is matched first to avoid $-matching inside it.
 // Unchanged from before module priorities existed (D2): no new grammar, no
 // braces -- every format that works today keeps working byte-for-byte.
+const fillModuleName = "fill"
+
 var tokenPattern = regexp.MustCompile(`\[([^\]]*)\]\(([^)]*)\)|\$([a-z_]+)`)
 
 // segmentKind distinguishes a module reference from a literal run in a
@@ -59,6 +61,9 @@ type segmentKind int
 const (
 	moduleSegment segmentKind = iota
 	literalSegment
+	// fillSegment is a $fill reference: elastic whitespace that pushes
+	// everything after it toward the right edge. Never a drop candidate.
+	fillSegment
 )
 
 // segment is one element of a parsed format: either a $name module
@@ -113,7 +118,12 @@ func parseFormat(format string) []segment {
 		case loc[6] != -1: // module reference: $name
 			flushLiteral()
 
-			segments = append(segments, segment{kind: moduleSegment, name: format[loc[6]:loc[7]]})
+			name := format[loc[6]:loc[7]]
+			if name == fillModuleName {
+				segments = append(segments, segment{kind: fillSegment})
+			} else {
+				segments = append(segments, segment{kind: moduleSegment, name: name})
+			}
 		}
 
 		lastIndex = loc[1]
@@ -194,9 +204,45 @@ func Render(cfg config.Config, data input.Data, columns string) (string, error) 
 	}
 
 	rendered := renderedText(states)
-	survives := selectSurvivors(segments, states, rendered, columns, cfg.Margin())
+	gap := cfg.FillGap()
+	survives := selectSurvivors(segments, states, rendered, columns, cfg.Margin(), gap)
 
-	return compose(segments, survives, rendered), nil
+	return compose(segments, survives, rendered, fillWidth(segments, survives, rendered, columns, cfg.Margin(), gap)), nil
+}
+
+// fillWidth computes how wide a $fill segment renders. Everything except the
+// fill is measured (fill = 0), then the fill absorbs the remaining slack so the
+// line ends flush against the usable width.
+//
+// The result is never below gap, so emission is always at least as wide as the
+// measurement selectSurvivors performed -- and never above usable whenever that
+// measurement fit, since the slack is exactly what is left over. When the width
+// is unknown there is nothing to flush against, so the fill collapses to gap.
+func fillWidth(
+	segments []segment, survives []bool, rendered []string, columns string, margin, gap int,
+) int {
+	if !hasFill(segments) {
+		return 0
+	}
+
+	usable, known := usableWidth(columns, margin)
+	if !known {
+		return gap
+	}
+
+	rest := width.Visible(compose(segments, survives, rendered, 0))
+
+	return max(usable-rest, gap)
+}
+
+func hasFill(segments []segment) bool {
+	for _, seg := range segments {
+		if seg.kind == fillSegment {
+			return true
+		}
+	}
+
+	return false
 }
 
 // renderModules resolves each module segment's config classification and
@@ -296,7 +342,7 @@ func rankedCandidates(segments []segment, states []moduleState) []candidate {
 // and admitted iff the composed candidate still fits within usable columns.
 // When the width is unknown, nothing is ever dropped (D5).
 func selectSurvivors(
-	segments []segment, states []moduleState, rendered []string, columns string, margin int,
+	segments []segment, states []moduleState, rendered []string, columns string, margin, gap int,
 ) []bool {
 	survives := mandatorySurvivors(segments, states)
 
@@ -314,7 +360,7 @@ func selectSurvivors(
 	for _, cand := range rankedCandidates(segments, states) {
 		survives[cand.index] = true
 
-		if width.Visible(compose(segments, survives, rendered)) > usable {
+		if width.Visible(compose(segments, survives, rendered, gap)) > usable {
 			survives[cand.index] = false
 		}
 	}
@@ -356,7 +402,7 @@ func usableWidth(columns string, margin int) (int, bool) {
 // accumulated in a gap since the last surviving module, only the LAST one
 // renders (D2) -- a multi-run gap arises only when two or more interior
 // module segments are dropped in a row (test 22).
-func compose(segments []segment, survives []bool, rendered []string) string {
+func compose(segments []segment, survives []bool, rendered []string, fillWidth int) string {
 	var result strings.Builder
 
 	var pendingGap []string
@@ -364,6 +410,12 @@ func compose(segments []segment, survives []bool, rendered []string) string {
 	havePreceding := false
 
 	for index, seg := range segments {
+		if seg.kind == fillSegment {
+			result.WriteString(strings.Repeat(" ", fillWidth))
+
+			continue
+		}
+
 		if seg.kind == literalSegment {
 			if seg.decoration {
 				result.WriteString(seg.literal)

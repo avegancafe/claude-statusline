@@ -35,6 +35,28 @@ type Threshold struct {
 // FitConfig holds settings for fitting the statusline to the terminal width.
 type FitConfig struct {
 	Margin int `toml:"margin"`
+
+	// Gap is the minimum columns a $fill segment reserves when the line is
+	// MEASURED for fitting. Emission expands $fill to absorb the remaining
+	// slack, so measuring it at its expanded width would make every line
+	// exactly `usable` wide and the fit test would always pass -- nothing
+	// would ever drop. Measuring at a fixed minimum keeps composed width
+	// monotone in the admitted set, which is what makes the single-pass
+	// greedy exact (D4). Defaults to 10, matching the reference script's GAP.
+	Gap *int `toml:"gap"`
+}
+
+// FillGap returns the configured [fit] gap, defaulting to 10 when unset.
+func (c Config) FillGap() int {
+	if c.Fit.Gap == nil {
+		return defaultFillGap
+	}
+
+	if *c.Fit.Gap < 0 {
+		return 0
+	}
+
+	return *c.Fit.Gap
 }
 
 // ModelConfig holds model module settings.
@@ -144,8 +166,11 @@ type VimModeConfig struct {
 }
 
 const (
+	// defaultFillGap mirrors the reference script's GAP=10.
+	defaultFillGap = 10
+
 	defaultTruncationLength = 3
-	defaultBarWidth = 5
+	defaultBarWidth         = 5
 	costWarnThreshold       = 5.0
 	ctxWarnThreshold        = 50
 	ctxHighThreshold        = 90

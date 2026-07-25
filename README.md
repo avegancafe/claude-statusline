@@ -129,7 +129,7 @@ disabled = false
 
 ### Priorities
 
-By default every module is mandatory: nothing is ever dropped, no matter how narrow the terminal. Set `priority = N` on a module to make it droppable. When the line doesn't fit `COLUMNS`, the lowest-priority module drops first, then the next-lowest, and so on, until the line fits or only mandatory modules remain. Higher priority means kept longer. A module with no `priority` set stays mandatory regardless of what priorities other modules have.
+By default every module is mandatory: nothing is ever dropped, no matter how narrow the terminal. Set `priority = N` on a module to make it droppable. When the line doesn't fit `COLUMNS`, droppable modules are considered highest priority first, and each one is kept only if it — together with everything already kept — still fits. A module that's too wide to fit at that point is skipped, and lower-priority modules are still considered after it, so a wide high-priority module can be dropped while a narrower low-priority one survives. A module with no `priority` set stays mandatory regardless of what priorities other modules have.
 
 No format rewriting is needed — this works on the stock default format the moment you set a priority:
 
@@ -151,6 +151,26 @@ priority = 10
 | 10 | `Opus` |
 
 `$model` has no priority, so it's mandatory and never drops. `$context` (priority 10) drops before `$cost` (priority 20) once the line stops fitting.
+
+This example's priority order happens to match its width order (the lower-priority module is also the wider one), which can make "highest priority first" look the same as "narrowest first." They aren't the same rule. Swap which module is wider and priority order wins even though it keeps the wider output:
+
+```toml
+format = "$model | $context | $cost"
+
+[context]
+priority = 40
+
+[cost]
+priority = 10
+```
+
+| `COLUMNS` | Output |
+|-----------|--------|
+| 30 | `Opus \| ██░░░ 42% \| $0.42` |
+| 20 | `Opus \| ██░░░ 42%` |
+| 14 | `Opus \| $0.42` |
+
+At `COLUMNS` 14, `$context` (priority 40, 9 columns wide) is tried first and doesn't fit even by itself alongside `$model`, so it's skipped — not dropped in some later pass, skipped in place, then selection keeps going. `$cost` (priority 10, 5 columns wide) is tried next and does fit, so it's admitted. The result keeps the *lower*-priority module and drops the higher-priority one, because priority sets the trial order, not a width-based drop order.
 
 #### Separators travel with their module
 

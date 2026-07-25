@@ -1,4 +1,4 @@
-module github.com/felipeelias/claude-statusline
+module github.com/avegancafe/claude-statusline
 
 go 1.26.1
 

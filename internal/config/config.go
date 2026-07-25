@@ -328,7 +328,7 @@ func DefaultPath() string {
 
 // sampleConfigTemplate is the commented TOML config template for the init command.
 const sampleConfigTemplate = `# claude-statusline configuration
-# Docs: https://github.com/felipeelias/claude-statusline
+# Docs: https://github.com/avegancafe/claude-statusline
 
 # Preset defines the complete visual style (layout, colors, separators).
 # Built-in presets:

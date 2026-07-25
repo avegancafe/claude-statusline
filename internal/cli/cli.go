@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/felipeelias/claude-statusline/internal/config"
-	"github.com/felipeelias/claude-statusline/internal/input"
-	"github.com/felipeelias/claude-statusline/internal/render"
+	"github.com/avegancafe/claude-statusline/internal/config"
+	"github.com/avegancafe/claude-statusline/internal/input"
+	"github.com/avegancafe/claude-statusline/internal/render"
 	ucli "github.com/urfave/cli/v2"
 )
 

@@ -6,17 +6,16 @@ Configurable status line for [Claude Code](https://docs.anthropic.com/en/docs/cl
 
 ## Installation
 
-With Homebrew:
+This is a fork of [felipeelias/claude-statusline](https://github.com/felipeelias/claude-statusline)
+adding width-aware module priorities (see [Priorities](#priorities)).
 
 ```bash
-brew install felipeelias/tap/claude-statusline
+go install github.com/avegancafe/claude-statusline@feat/module-priorities
 ```
 
-Or with Go:
-
-```bash
-go install github.com/felipeelias/claude-statusline@latest
-```
+Note the explicit ref: this fork inherited upstream's `v0.x` tags, so `@latest`
+would resolve to `v0.9.0` and silently give you a build *without* priorities.
+Pin a branch or a fork-specific tag.
 
 ## Setup
 

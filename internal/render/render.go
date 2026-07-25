@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/felipeelias/claude-statusline/internal/config"
-	"github.com/felipeelias/claude-statusline/internal/input"
-	"github.com/felipeelias/claude-statusline/internal/modules"
-	"github.com/felipeelias/claude-statusline/internal/style"
-	"github.com/felipeelias/claude-statusline/internal/width"
+	"github.com/avegancafe/claude-statusline/internal/config"
+	"github.com/avegancafe/claude-statusline/internal/input"
+	"github.com/avegancafe/claude-statusline/internal/modules"
+	"github.com/avegancafe/claude-statusline/internal/style"
+	"github.com/avegancafe/claude-statusline/internal/width"
 )
 
 // ModuleEntry pairs a module with whether it is disabled in config. Exported

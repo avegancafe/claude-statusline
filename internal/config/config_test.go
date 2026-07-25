@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/BurntSushi/toml"
-	"github.com/felipeelias/claude-statusline/internal/config"
-	"github.com/felipeelias/claude-statusline/internal/render"
+	"github.com/avegancafe/claude-statusline/internal/config"
+	"github.com/avegancafe/claude-statusline/internal/render"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

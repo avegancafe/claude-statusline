@@ -3,7 +3,7 @@ package config_test
 import (
 	"testing"
 
-	"github.com/felipeelias/claude-statusline/internal/config"
+	"github.com/avegancafe/claude-statusline/internal/config"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -1,8 +1,8 @@
 package modules
 
 import (
-	"github.com/felipeelias/claude-statusline/internal/config"
-	"github.com/felipeelias/claude-statusline/internal/input"
+	"github.com/avegancafe/claude-statusline/internal/config"
+	"github.com/avegancafe/claude-statusline/internal/input"
 )
 
 // AgentNameModule renders the agent name when running with --agent.

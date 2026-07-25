@@ -1,8 +1,8 @@
 package modules
 
 import (
-	"github.com/felipeelias/claude-statusline/internal/config"
-	"github.com/felipeelias/claude-statusline/internal/input"
+	"github.com/avegancafe/claude-statusline/internal/config"
+	"github.com/avegancafe/claude-statusline/internal/input"
 )
 
 const msPerHour = 3_600_000

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/felipeelias/claude-statusline/internal/width"
+	"github.com/avegancafe/claude-statusline/internal/width"
 )
 
 // TestVisibleGlyphs pins the verified go-runewidth v0.0.27 values for the

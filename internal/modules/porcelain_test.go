@@ -3,7 +3,7 @@ package modules_test
 import (
 	"testing"
 
-	"github.com/felipeelias/claude-statusline/internal/modules"
+	"github.com/avegancafe/claude-statusline/internal/modules"
 	"github.com/stretchr/testify/assert"
 )
 

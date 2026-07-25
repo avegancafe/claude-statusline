@@ -140,3 +140,17 @@ func TestResolveBarChars_ViaUsageModule(t *testing.T) {
 		assert.Contains(t, result, "###\u28c0\u28c0")
 	})
 }
+
+func TestBuildBarNonZeroAlwaysFillsOneCell(t *testing.T) {
+	// A non-zero percentage that truncates to zero cells must still show one:
+	// an empty meter reads as "no usage", which is wrong for 12%.
+	assert.Equal(t, "⣿⣉⣉⣉", modules.BuildBarForTest(12, 4, "⣿", "⣉"))
+	assert.Equal(t, "⣿⣉⣉⣉", modules.BuildBarForTest(0.1, 4, "⣿", "⣉"))
+
+	// Exact zero still renders completely empty.
+	assert.Equal(t, "⣉⣉⣉⣉", modules.BuildBarForTest(0, 4, "⣿", "⣉"))
+
+	// Ordinary and saturating cases are unaffected.
+	assert.Equal(t, "⣿⣿⣉⣉", modules.BuildBarForTest(55, 4, "⣿", "⣉"))
+	assert.Equal(t, "⣿⣿⣿⣿", modules.BuildBarForTest(100, 4, "⣿", "⣉"))
+}

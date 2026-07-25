@@ -1,6 +1,9 @@
 package modules_test
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/avegancafe/claude-statusline/internal/config"
@@ -80,4 +83,27 @@ func TestDirectoryModule_Render(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, result, "\033[36m")
 	})
+}
+
+func TestDirectoryBaseAndRepoName(t *testing.T) {
+	repo := t.TempDir()
+	require.NoError(t, exec.Command("git", "-C", repo, "init", "--quiet").Run())
+
+	sub := filepath.Join(repo, "nested", "deeper")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+
+	cfg := config.Default()
+	cfg.Directory.Format = "{{.Base}}|{{.RepoName}}"
+
+	// Inside a repo subdirectory, Base tracks the leaf while RepoName stays
+	// pinned to the worktree root — the property a repo-labelled block wants.
+	out, err := modules.NewDirectoryModule().Render(input.Data{Cwd: sub}, cfg)
+	require.NoError(t, err)
+	assert.Contains(t, out, "deeper|"+filepath.Base(repo))
+
+	// Outside a repo, RepoName falls back to Base rather than erroring.
+	plain := t.TempDir()
+	out, err = modules.NewDirectoryModule().Render(input.Data{Cwd: plain}, cfg)
+	require.NoError(t, err)
+	assert.Contains(t, out, filepath.Base(plain)+"|"+filepath.Base(plain))
 }

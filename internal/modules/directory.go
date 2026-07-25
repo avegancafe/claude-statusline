@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -30,6 +32,38 @@ func NewDirectoryModuleWithHome(home string) DirectoryModule {
 
 func (DirectoryModule) Name() string { return "directory" }
 
+// directoryTemplateData is the template context for the directory module.
+//
+// RepoName is a METHOD, not a field, on purpose: text/template only calls it
+// when a format string actually references {{.RepoName}}, so the `git rev-parse`
+// subprocess is never spawned for the default format. Making it a field would
+// shell out on every render.
+type directoryTemplateData struct {
+	Dir  string
+	Base string
+
+	cwd string
+}
+
+// RepoName is the basename of the enclosing git worktree, falling back to Base
+// outside a repository. This is what a repo-labelled statusline block usually
+// wants: it stays stable as you cd into subdirectories, where Base changes.
+func (d directoryTemplateData) RepoName() string {
+	cmd := exec.Command("git", "-C", d.cwd, "--no-optional-locks", "rev-parse", "--show-toplevel")
+
+	out, err := cmd.Output()
+	if err != nil {
+		return d.Base
+	}
+
+	root := strings.TrimSpace(string(out))
+	if root == "" {
+		return d.Base
+	}
+
+	return filepath.Base(root)
+}
+
 func (m DirectoryModule) Render(data input.Data, cfg config.Config) (string, error) {
 	cwd := data.Cwd
 	if cwd == "" {
@@ -53,7 +87,7 @@ func (m DirectoryModule) Render(data input.Data, cfg config.Config) (string, err
 
 	dir = truncatePath(dir, cfg.Directory.TruncationLength)
 
-	templateData := struct{ Dir string }{Dir: dir}
+	templateData := directoryTemplateData{Dir: dir, Base: filepath.Base(cwd), cwd: cwd}
 
 	result, err := renderTemplate("directory", cfg.Directory.Format, templateData)
 	if err != nil {

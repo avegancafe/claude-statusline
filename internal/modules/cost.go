@@ -22,9 +22,9 @@ func (CostModule) Render(data input.Data, cfg config.Config) (string, error) {
 	}
 
 	templateData := struct {
-		TotalCostUSD   float64
-		BurnRate       float64
-		APIDurationMs  int
+		TotalCostUSD  float64
+		BurnRate      float64
+		APIDurationMs int
 	}{
 		TotalCostUSD:  cost,
 		BurnRate:      burnRate,

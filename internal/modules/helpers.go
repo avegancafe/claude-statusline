@@ -74,6 +74,14 @@ func resolveBarChars(barStyle, barFill, barEmpty string) (string, string) {
 // buildBar creates a progress bar string from a percentage value.
 func buildBar(pct float64, width int, fill, empty string) string {
 	filled := min(max(int(pct/pctMax*float64(width)), 0), width)
+
+	// Any non-zero percentage fills at least one cell. Truncation alone renders
+	// e.g. 12% over 4 cells as a completely empty meter, which reads as "no
+	// usage at all" rather than "a little". Exact zero still renders empty.
+	if filled == 0 && pct > 0 {
+		filled = 1
+	}
+
 	emptyCount := width - filled
 
 	return strings.Repeat(fill, filled) + strings.Repeat(empty, emptyCount)
